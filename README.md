@@ -1,1 +1,1 @@
-# wxg1.github.io
+# wxg.github.io
