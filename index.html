@@ -1,572 +1,1573 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="dark">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>太阳系运动模型 · Three.js</title>
-<style>
-  :root { color-scheme: dark; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-  canvas { display: block; }
-  .hint {
-    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
-    font: 12px/1.6 ui-sans-serif, system-ui, -apple-system,
-          "PingFang SC", "Microsoft YaHei", sans-serif;
-    color: rgba(180, 200, 255, .38);
-    letter-spacing: .18em; user-select: none; pointer-events: none;
-    white-space: nowrap;
-  }
-  .loading {
-    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-    background: #000; color: rgba(180,200,255,.6); letter-spacing: .3em; font-size: 12px;
-    font-family: system-ui, sans-serif; transition: opacity .8s; z-index: 10;
-  }
-  .loading.hide { opacity: 0; pointer-events: none; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Three.js 地月系三维交互模型 (Earth–Moon System 3D Simulator)</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #030712;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #f8fafc;
+    }
+    .font-mono-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    #canvas-container {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      z-index: 1;
+    }
+    #canvas-container:active {
+      cursor: grabbing;
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.76);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.6);
+    }
+    .hud-label {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+      white-space: nowrap;
+      z-index: 10;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(51, 65, 85, 0.7);
+      height: 6px;
+      border-radius: 999px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.4);
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.5);
+      border-radius: 999px;
+    }
+  </style>
 </head>
-<body>
-<div class="loading" id="loading">LOADING</div>
-<div class="hint">拖拽旋转 · 滚轮缩放 · 右键平移</div>
+<body class="relative w-full h-full overflow-hidden select-none">
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-  }
-}
-</script>
+  <!-- 3D WebGL Container -->
+  <div id="canvas-container" aria-label="地月系三维交互画布"></div>
 
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  <!-- 3D Projected Floating Labels Container -->
+  <div id="labels-container" class="absolute inset-0 pointer-events-none overflow-hidden z-10">
+    <div id="label-earth" class="hud-label px-2 py-0.5 rounded bg-sky-950/85 border border-sky-400/40 text-sky-200 text-xs font-medium shadow-md">
+      🌍 地球 Earth <span class="text-[10px] text-sky-300/80 font-mono-num">R=6,371km · 倾角23.44°</span>
+    </div>
+    <div id="label-moon" class="hud-label px-2 py-0.5 rounded bg-slate-900/85 border border-amber-300/40 text-amber-200 text-xs font-medium shadow-md">
+      🌕 月球 Moon <span class="text-[10px] text-amber-300/80 font-mono-num">R=1,737.5km · 潮汐锁定</span>
+    </div>
+    <div id="label-perigee" class="hud-label px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono-num">
+      近地点 Perigee · 363,300 km
+    </div>
+    <div id="label-apogee" class="hud-label px-1.5 py-0.5 rounded bg-purple-950/80 border border-purple-400/30 text-purple-300 text-[10px] font-mono-num">
+      远地点 Apogee · 405,500 km
+    </div>
+    <div id="label-barycenter" class="hud-label px-1.5 py-0.5 rounded bg-rose-950/80 border border-rose-400/30 text-rose-300 text-[10px] font-mono-num">
+      ⊕ 地月质心 Barycenter
+    </div>
+  </div>
 
-/* ============================================================
-   0. 工具函数
-   ============================================================ */
-function hexToRgb(hex) {
-  const n = parseInt(hex.replace('#', ''), 16);
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-}
+  <!-- Top Header & Telemetry Bar -->
+  <header class="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+    <!-- Brand & Title -->
+    <div class="glass-panel rounded-xl px-3.5 py-2 flex items-center gap-3 pointer-events-auto">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-inner text-base">
+        🌍
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-sm sm:text-base font-bold tracking-tight text-white">地月系三维天体力学模型</h1>
+          <span class="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded bg-sky-500/20 text-sky-300 border border-sky-400/30">Three.js r128</span>
+        </div>
+        <p class="text-[11px] text-slate-300 hidden sm:block">拖拽旋转视角 · 滚轮/双指缩放 · 真实轨道倾角与同步自转</p>
+      </div>
+    </div>
 
-/* 圆形光点贴图（星星 / 辉光共用） */
-function createDotTexture() {
-  const s = 64;
-  const c = document.createElement('canvas');
-  c.width = c.height = s;
-  const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.35, 'rgba(255,255,255,0.6)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, s, s);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
+    <!-- Real-time Telemetry Pill -->
+    <div class="glass-panel rounded-xl px-3 py-1.5 flex items-center gap-3 sm:gap-5 pointer-events-auto text-xs">
+      <div>
+        <div class="text-[10px] text-slate-400">瞬时地月距离</div>
+        <div id="readout-distance" class="font-mono-num font-semibold text-sky-300 text-xs sm:text-sm">363,300 km</div>
+      </div>
+      <div class="h-6 w-px bg-slate-700/70"></div>
+      <div>
+        <div class="text-[10px] text-slate-400">月球公转线速度</div>
+        <div id="readout-velocity" class="font-mono-num font-semibold text-emerald-300 text-xs sm:text-sm">1.082 km/s</div>
+      </div>
+      <div class="h-6 w-px bg-slate-700/70 hidden md:block"></div>
+      <div class="hidden md:block">
+        <div class="text-[10px] text-slate-400">朔望月周期进度</div>
+        <div id="readout-day" class="font-mono-num font-semibold text-amber-300 text-xs sm:text-sm">第 0.00 / 29.53 天</div>
+      </div>
+      <button id="btn-open-data" type="button" class="ml-1 px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-sky-300 border border-sky-500/30 text-xs font-medium transition flex items-center gap-1">
+        <span>📊</span>
+        <span class="hidden sm:inline">NASA 实测参数</span>
+      </button>
+    </div>
+  </header>
 
-/* 太阳辉光贴图 */
-function createGlowTexture() {
-  const s = 256;
-  const c = document.createElement('canvas');
-  c.width = c.height = s;
-  const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0.00, 'rgba(255,250,225,1)');
-  g.addColorStop(0.14, 'rgba(255,215,120,0.72)');
-  g.addColorStop(0.32, 'rgba(255,150,45,0.30)');
-  g.addColorStop(0.60, 'rgba(255,95,10,0.075)');
-  g.addColorStop(1.00, 'rgba(255,60,0,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, s, s);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
+  <!-- Left / Top-Right Moon Phase PiP & Camera Bar -->
+  <aside class="absolute top-20 right-3 z-20 flex flex-col gap-2.5 w-44 sm:w-52 pointer-events-none">
+    <!-- Earth-View Moon Phase Card -->
+    <div class="glass-panel rounded-xl p-3 pointer-events-auto flex flex-col items-center">
+      <div class="w-full flex items-center justify-between mb-1.5">
+        <span class="text-[11px] font-semibold text-slate-300">地球观测月相</span>
+        <span id="readout-illumination" class="text-[11px] font-mono-num text-amber-300 font-semibold">0%</span>
+      </div>
+      <div class="relative flex items-center justify-center my-1">
+        <canvas id="phase-canvas" width="96" height="96" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full border border-slate-700/80 shadow-inner bg-slate-950"></canvas>
+      </div>
+      <div id="readout-phase-name" class="mt-1 text-xs sm:text-sm font-bold text-amber-200 tracking-wide">新月 (朔)</div>
+      <div id="readout-elongation" class="text-[10px] text-slate-400 font-mono-num">日月黄经差: 0.0°</div>
+    </div>
 
-/* 太阳表面贴图：湍流噪声 */
-function createSunTexture() {
-  const W = 512, H = 256;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const ctx = c.getContext('2d');
-  const img = ctx.createImageData(W, H);
-  const d = img.data;
+    <!-- Camera & Scale Switcher Card -->
+    <div class="glass-panel rounded-xl p-2.5 pointer-events-auto flex flex-col gap-2">
+      <div class="text-[11px] font-semibold text-slate-300 px-0.5">摄像机视角切换</div>
+      <div class="grid grid-cols-2 gap-1.5">
+        <button type="button" data-cam="system" class="cam-btn px-2 py-1.5 rounded-lg text-[11px] font-medium bg-sky-500/30 text-sky-200 border border-sky-400/50 transition">
+          🌌 全景系统
+        </button>
+        <button type="button" data-cam="earth" class="cam-btn px-2 py-1.5 rounded-lg text-[11px] font-medium bg-slate-800/70 hover:bg-slate-700/70 text-slate-300 border border-slate-700 transition">
+          🌍 锁定地球
+        </button>
+        <button type="button" data-cam="moon" class="cam-btn px-2 py-1.5 rounded-lg text-[11px] font-medium bg-slate-800/70 hover:bg-slate-700/70 text-slate-300 border border-slate-700 transition">
+          🌕 锁定月球
+        </button>
+        <button type="button" data-cam="top" class="cam-btn px-2 py-1.5 rounded-lg text-[11px] font-medium bg-slate-800/70 hover:bg-slate-700/70 text-slate-300 border border-slate-700 transition">
+          🧭 黄道俯视
+        </button>
+        <button type="button" data-cam="ecliptic" class="cam-btn col-span-2 px-2 py-1.5 rounded-lg text-[11px] font-medium bg-slate-800/70 hover:bg-slate-700/70 text-slate-300 border border-slate-700 transition">
+          📐 黄道面侧视 (观察 23.44° 与 5.145° 倾角)
+        </button>
+      </div>
 
-  const cold = hexToRgb('#ff7b12');   // 暗部
-  const hot  = hexToRgb('#fff8d0');   // 亮部
+      <div class="pt-1 border-t border-slate-700/60">
+        <div class="text-[11px] font-semibold text-slate-300 px-0.5 mb-1.5">空间比例尺模式</div>
+        <div class="grid grid-cols-2 gap-1.5">
+          <button type="button" id="btn-scale-visual" class="px-2 py-1 rounded-lg text-[11px] font-medium bg-indigo-500/30 text-indigo-200 border border-indigo-400/50 transition">
+            🔬 教学紧凑比例
+          </button>
+          <button type="button" id="btn-scale-true" class="px-2 py-1 rounded-lg text-[11px] font-medium bg-slate-800/70 hover:bg-slate-700/70 text-slate-300 border border-slate-700 transition">
+            📏 真实距离比例
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
 
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      let n = 0;
-      n += Math.sin(x * 0.085 + y * 0.052) * 0.50;
-      n += Math.sin(x * 0.210 - y * 0.131 + 1.7) * 0.30;
-      n += Math.sin(x * 0.470 + y * 0.390 + 3.3) * 0.14;
-      n += Math.sin(x * 1.130 - y * 0.870 + 5.1) * 0.06;
-      n = (n + 1) * 0.5;
-      n = Math.pow(n, 0.85);
+  <!-- Bottom Interactive Control Deck -->
+  <section class="absolute bottom-3 left-3 right-3 z-20 pointer-events-none flex flex-col items-center">
+    <div class="glass-panel rounded-2xl p-3 sm:p-4 w-full max-w-4xl pointer-events-auto flex flex-col gap-3">
+      
+      <!-- Row 1: Lunar Cycle Timeline Scrubber & Quick Phase Jumps -->
+      <div class="flex flex-col gap-1.5">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <label for="slider-day" class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+            <span>🌙 朔望月时间轴 (29.53 天周期)</span>
+            <span id="badge-scale-note" class="text-[10px] font-normal px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">地月半径比 1 : 0.273 (严格按真实比例)</span>
+          </label>
+          <!-- 8 Phase Quick Jump Buttons -->
+          <div class="flex flex-wrap items-center gap-1">
+            <button type="button" data-phase-day="0" class="phase-jump-btn px-2 py-0.5 rounded text-[11px] bg-slate-800/90 hover:bg-sky-500/30 text-slate-300 hover:text-sky-200 border border-slate-700 transition">新月</button>
+            <button type="button" data-phase-day="3.69" class="phase-jump-btn px-2 py-0.5 rounded text-[11px] bg-slate-800/90 hover:bg-sky-500/30 text-slate-300 hover:text-sky-200 border border-slate-700 transition">蛾眉月</button>
+            <button type="button" data-phase-day="7.38" class="phase-jump-btn px-2 py-0.5 rounded text-[11px] bg-slate-800/90 hover:bg-sky-500/30 text-slate-300 hover:text-sky-200 border border-slate-700 transition">上弦月</button>
+            <button type="button" data-phase-day="11.07" class="phase-jump-btn px-2 py-0.5 rounded text-[11px] bg-slate-800/90 hover:bg-sky-500/30 text-slate-300 hover:text-sky-200 border border-slate-700 transition">盈凸月</button>
+            <button type="button" data-phase-day="14.77" class="phase-jump-btn px-2 py-0.5 rounded text-[11px] bg-slate-800/90 hover:bg-sky-500/30 text-slate-300 hover:text-sky-200 border border-slate-700 transition">满月</button>
+            <button type="button" data-phase-day="18.46" class="phase-jump-btn px-2 py-0.5 rounded text-[11px] bg-slate-800/90 hover:bg-sky-500/30 text-slate-300 hover:text-sky-200 border border-slate-700 transition">亏凸月</button>
+            <button type="button" data-phase-day="22.15" class="phase-jump-btn px-2 py-0.5 rounded text-[11px] bg-slate-800/90 hover:bg-sky-500/30 text-slate-300 hover:text-sky-200 border border-slate-700 transition">下弦月</button>
+            <button type="button" data-phase-day="25.84" class="phase-jump-btn px-2 py-0.5 rounded text-[11px] bg-slate-800/90 hover:bg-sky-500/30 text-slate-300 hover:text-sky-200 border border-slate-700 transition">残月</button>
+          </div>
+        </div>
+        <input id="slider-day" type="range" min="0" max="29.530589" step="0.01" value="3.69" class="w-full" />
+      </div>
 
-      const i = (y * W + x) * 4;
-      d[i]     = cold.r + (hot.r - cold.r) * n;
-      d[i + 1] = cold.g + (hot.g - cold.g) * n;
-      d[i + 2] = cold.b + (hot.b - cold.b) * n;
-      d[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
+      <!-- Row 2: Playback Controls, Speed Slider & Layer Toggles -->
+      <div class="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-800/80">
+        <!-- Play/Pause & Speed -->
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <button id="btn-play-pause" type="button" class="px-3.5 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-sky-500/20 transition">
+            <span id="icon-play-pause">⏸</span>
+            <span id="text-play-pause">暂停演化</span>
+          </button>
 
-/* 行星表面贴图 */
-function createPlanetTexture({ colorA, colorB, bands = 10, seed = 0, earth = false }) {
-  const W = 512, H = 256;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const ctx = c.getContext('2d');
-  const img = ctx.createImageData(W, H);
-  const d = img.data;
+          <button id="btn-reset-view" type="button" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs border border-slate-700 transition">
+            ↺ 重置视角
+          </button>
 
-  const A = hexToRgb(colorA);
-  const B = hexToRgb(colorB);
+          <div class="flex items-center gap-2 bg-slate-900/70 px-2.5 py-1 rounded-xl border border-slate-800">
+            <label for="slider-speed" class="text-[11px] text-slate-400">速率</label>
+            <input id="slider-speed" type="range" min="0.1" max="30" step="0.1" value="2.5" class="w-20 sm:w-28" />
+            <span id="readout-speed" class="text-xs font-mono-num text-sky-300 w-14 text-right">2.5天/秒</span>
+          </div>
+        </div>
 
-  for (let y = 0; y < H; y++) {
-    const v = y / H;                     // 0 上 → 1 下
-    const lat = (v - 0.5) * 2;           // -1 .. 1
+        <!-- Visual Auxiliary Layer Toggles -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button type="button" id="toggle-orbit" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 transition">
+            ✓ 轨道与黄道网格
+          </button>
+          <button type="button" id="toggle-axes" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 transition">
+            ✓ 自转轴与潮汐锁线
+          </button>
+          <button type="button" id="toggle-clouds" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 transition">
+            ✓ 大气与动态云层
+          </button>
+          <button type="button" id="toggle-labels" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 transition">
+            ✓ 空间标注
+          </button>
+          <button type="button" id="toggle-sunlight" class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-400/40 transition">
+            ☀ 太阳平行光束
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
 
-    // —— 纬向条纹（只与 y 有关，预先算好）——
-    let band = 0;
-    for (let k = 1; k <= bands; k++) {
-      band += Math.sin(v * Math.PI * k * 1.7 + seed * 2.3 + k) / k;
-    }
-    band = (band + 1) * 0.5;
+  <!-- NASA Astronomical Parameters Comparison Modal -->
+  <div id="modal-data" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+    <div class="glass-panel rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-700">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-white">地球与月球天文物理实测参数对比</h2>
+          <p class="text-xs text-slate-400">基于 NASA 国家空间科学数据中心 (NSSDC) 行星与月球实测档案</p>
+        </div>
+        <button id="btn-close-data" type="button" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center text-sm font-bold">
+          ✕
+        </button>
+      </div>
 
-    for (let x = 0; x < W; x++) {
-      const i = (y * W + x) * 4;
-      let t;
+      <div class="p-5 overflow-y-auto custom-scrollbar space-y-4 text-xs sm:text-sm">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-700 text-slate-300">
+                <th class="py-2 pr-3 font-semibold">物理/轨道指标</th>
+                <th class="py-2 px-3 font-semibold text-sky-300">🌍 地球 (Earth)</th>
+                <th class="py-2 px-3 font-semibold text-amber-300">🌕 月球 (Moon)</th>
+                <th class="py-2 pl-3 font-semibold text-slate-400">比值 / 物理意义</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/80 font-mono-num text-xs">
+              <tr>
+                <td class="py-2.5 pr-3 font-sans text-slate-300">平均/赤道半径</td>
+                <td class="py-2.5 px-3 text-sky-200">6,371.0 km (赤道 6,378.1 km)</td>
+                <td class="py-2.5 px-3 text-amber-200">1,737.5 km</td>
+                <td class="py-2.5 pl-3 font-sans text-slate-400">地球直径约为月球的 3.67 倍</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-3 font-sans text-slate-300">天体质量</td>
+                <td class="py-2.5 px-3 text-sky-200">5.9722 × 10²⁴ kg</td>
+                <td class="py-2.5 px-3 text-amber-200">0.07346 × 10²⁴ kg</td>
+                <td class="py-2.5 pl-3 font-sans text-slate-400">月地质量比 0.0123 (约 1/81)</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-3 font-sans text-slate-300">轨道半长轴 (平均距离)</td>
+                <td class="py-2.5 px-3 text-sky-200">149,598,262 km (绕日)</td>
+                <td class="py-2.5 px-3 text-amber-200">384,400 km (绕地)</td>
+                <td class="py-2.5 pl-3 font-sans text-slate-400">约为地球半径的 60.3 倍</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-3 font-sans text-slate-300">近地点 / 远地点</td>
+                <td class="py-2.5 px-3 text-slate-400">—</td>
+                <td class="py-2.5 px-3 text-amber-200">363,300 km / 405,500 km</td>
+                <td class="py-2.5 pl-3 font-sans text-slate-400">椭圆偏心率 e = 0.0549</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-3 font-sans text-slate-300">恒星周期 (公转/自转)</td>
+                <td class="py-2.5 px-3 text-sky-200">自转 23.9345 小时</td>
+                <td class="py-2.5 px-3 text-amber-200">27.3217 天 (同步自转)</td>
+                <td class="py-2.5 pl-3 font-sans text-slate-400">潮汐锁定：始终以同一面朝向地球</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-3 font-sans text-slate-300">朔望月周期 (月相更替)</td>
+                <td class="py-2.5 px-3 text-slate-400">—</td>
+                <td class="py-2.5 px-3 text-amber-200">29.5306 天</td>
+                <td class="py-2.5 pl-3 font-sans text-slate-400">新月→满月→新月完整周期</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-3 font-sans text-slate-300">赤道倾角 / 轨道倾角</td>
+                <td class="py-2.5 px-3 text-sky-200">黄赤交角 23.44°</td>
+                <td class="py-2.5 px-3 text-amber-200">白道对黄道倾角 5.145°</td>
+                <td class="py-2.5 pl-3 font-sans text-slate-400">解释为何并非每月都发生日月食</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-3 font-sans text-slate-300">表面重力加速度</td>
+                <td class="py-2.5 px-3 text-sky-200">9.80665 m/s²</td>
+                <td class="py-2.5 px-3 text-amber-200">1.624 m/s²</td>
+                <td class="py-2.5 pl-3 font-sans text-slate-400">月球重力约为地球的 16.6% (约 1/6)</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-3 font-sans text-slate-300">逃逸速度</td>
+                <td class="py-2.5 px-3 text-sky-200">40,284 km/h (11.19 km/s)</td>
+                <td class="py-2.5 px-3 text-amber-200">8,552 km/h (2.38 km/s)</td>
+                <td class="py-2.5 pl-3 font-sans text-slate-400">公转均速 1.022 km/s (0.970–1.082)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-      if (earth) {
-        // 大陆 / 海洋
-        const n1 = Math.sin(x * 0.048 + seed) * Math.cos(y * 0.095 + seed * 1.7);
-        const n2 = Math.sin(x * 0.021 - y * 0.037 + seed * 3.1);
-        const n3 = Math.sin(x * 0.11 + y * 0.13 + seed * 0.7) * 0.5;
-        const n = (n1 + n2 * 0.8 + n3 * 0.35) * 0.55;
-        t = n > 0.10 ? Math.min(1, (n - 0.10) * 3.2) : 0;
+        <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 space-y-1.5">
+          <div class="font-semibold text-sky-300">💡 模型科学要点说明：</div>
+          <p>1. <strong>潮汐锁定 (Synchronous Rotation)</strong>：月球绕轴自转周期（27.3217天）与绕地恒星公转周期完全相同，连接地心与月心的洋红色锁线直观展示了月球正面始终朝向地球。</p>
+          <p>2. <strong>地月公共质心 (Barycenter)</strong>：地球与月球实际上共同围绕距离地心约 4,671 km（位于地球内部、距地表约 1,700 km）的公共质心旋转。</p>
+          <p>3. <strong>权威数据来源</strong>：
+            <a href="https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">NASA Moon Fact Sheet</a> ·
+            <a href="https://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">NASA Earth Fact Sheet</a> ·
+            <a href="https://science.nasa.gov/moon/by-the-numbers/" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">NASA Science: Earth &amp; Moon By the Numbers</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        // 极地冰盖
-        const ice = Math.max(0, Math.abs(lat) - 0.80) / 0.20;
-        if (ice > 0) t = Math.min(1, t + ice * 0.9);
-      } else {
-        t = band;
+  <script>
+    (function () {
+      'use strict';
+
+      // =========================================================================
+      // 1. NASA Grounded Constants & Simulation State
+      // =========================================================================
+      const ASTRO = {
+        EARTH_RADIUS_KM: 6371.0,
+        MOON_RADIUS_KM: 1737.5,
+        RADIUS_RATIO: 1737.5 / 6371.0, // ~0.27272
+        SEMI_MAJOR_AXIS_KM: 384400,
+        PERIGEE_KM: 363300,
+        APOGEE_KM: 405500,
+        ECCENTRICITY: 0.0549,
+        EARTH_TILT_DEG: 23.4393,
+        MOON_ORBIT_INCLINATION_DEG: 5.145,
+        MOON_AXIAL_TILT_DEG: 6.68,
+        SIDEREAL_PERIOD_DAYS: 27.3217,
+        SYNODIC_PERIOD_DAYS: 29.530589,
+        MEAN_VELOCITY_KMS: 1.022,
+        MIN_VELOCITY_KMS: 0.970,
+        MAX_VELOCITY_KMS: 1.082,
+        BARYCENTER_OFFSET_RATIO: 4671 / 6371.0 // ~0.733 of Earth radius
+      };
+
+      const state = {
+        isPlaying: true,
+        speedDaysPerSec: 2.5,
+        synodicDay: 3.69, // Starts at scenic Waxing Crescent
+        scaleMode: 'visual', // 'visual' | 'true'
+        cameraMode: 'system', // 'system' | 'earth' | 'moon' | 'top' | 'ecliptic'
+        showOrbit: true,
+        showAxes: true,
+        showClouds: true,
+        showLabels: true,
+        showSunlight: true
+      };
+
+      // Scene unit scaling
+      const SCALE_CONFIG = {
+        visual: {
+          earthRadius: 2.4,
+          moonRadius: 2.4 * ASTRO.RADIUS_RATIO, // ~0.6545
+          semiMajorAxis: 16.0,
+          eccentricity: 0.0549
+        },
+        true: {
+          earthRadius: 1.0,
+          moonRadius: 1.0 * ASTRO.RADIUS_RATIO,
+          semiMajorAxis: 60.336, // 384,400 / 6,371
+          eccentricity: 0.0549
+        }
+      };
+
+      // =========================================================================
+      // 2. Procedural High-Resolution Canvas Textures (Zero External Image Deps)
+      // =========================================================================
+      function pseudoNoise(x, y, z, seed) {
+        const n = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed) * 43758.5453;
+        return n - Math.floor(n);
       }
 
-      // 细颗粒噪点
-      const gr = Math.sin(x * 12.9898 + y * 78.233 + seed * 31.7) * 43758.5453;
-      const grain = (gr - Math.floor(gr) - 0.5) * 0.09;
+      function fbm3D(vx, vy, vz, octaves, freq, seed) {
+        let total = 0;
+        let amplitude = 0.5;
+        let f = freq;
+        let maxVal = 0;
+        for (let i = 0; i < octaves; i++) {
+          // Smooth trigonometric multi-frequency field on unit sphere
+          const v =
+            Math.sin(vx * f + seed * 1.3) * Math.cos(vy * f - seed * 0.7) +
+            Math.sin(vy * f * 1.17 + vz * f * 0.93 + seed) * 0.6 +
+            Math.cos(vz * f * 1.31 - vx * f * 1.09 - seed * 0.4) * 0.4;
+          total += (v * 0.5 + 0.5) * amplitude;
+          maxVal += amplitude;
+          amplitude *= 0.52;
+          f *= 2.05;
+        }
+        return total / maxVal;
+      }
 
-      const tt = Math.min(1, Math.max(0, t + grain));
+      function createEarthTextures() {
+        const width = 1024;
+        const height = 512;
 
-      d[i]     = A.r + (B.r - A.r) * tt;
-      d[i + 1] = A.g + (B.g - A.g) * tt;
-      d[i + 2] = A.b + (B.b - A.b) * tt;
-      d[i + 3] = 255;
-    }
-  }
+        const diffCanvas = document.createElement('canvas');
+        diffCanvas.width = width;
+        diffCanvas.height = height;
+        const diffCtx = diffCanvas.getContext('2d');
+        const diffImg = diffCtx.createImageData(width, height);
 
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
+        const specCanvas = document.createElement('canvas');
+        specCanvas.width = width;
+        specCanvas.height = height;
+        const specCtx = specCanvas.getContext('2d');
+        const specImg = specCtx.createImageData(width, height);
 
-/* 土星环贴图（横向条纹，靠 UV 拉伸成环） */
-function createRingTexture() {
-  const W = 1024, H = 16;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const ctx = c.getContext('2d');
-  const img = ctx.createImageData(W, H);
-  const d = img.data;
+        const bumpCanvas = document.createElement('canvas');
+        bumpCanvas.width = width;
+        bumpCanvas.height = height;
+        const bumpCtx = bumpCanvas.getContext('2d');
+        const bumpImg = bumpCtx.createImageData(width, height);
 
-  for (let x = 0; x < W; x++) {
-    const u = x / W;
+        for (let y = 0; y < height; y++) {
+          const v = y / height;
+          const phi = v * Math.PI;
+          const sinPhi = Math.sin(phi);
+          const cosPhi = Math.cos(phi);
+          const lat = Math.abs(v - 0.5) * 2; // 0 at equator, 1 at poles
 
-    // 多层条纹叠加
-    let a = 0.52
-          + 0.30 * Math.sin(u * 61.0)
-          + 0.18 * Math.sin(u * 23.7 + 1.3)
-          + 0.12 * Math.sin(u * 137.0 + 2.6);
-    a = Math.max(0.05, Math.min(1, a));
+          for (let x = 0; x < width; x++) {
+            const u = x / width;
+            const theta = u * Math.PI * 2;
+            const vx = sinPhi * Math.cos(theta);
+            const vy = cosPhi;
+            const vz = sinPhi * Math.sin(theta);
 
-    // 卡西尼缝等空隙
-    if (u > 0.50 && u < 0.575) a *= 0.10;
-    if (u > 0.755 && u < 0.790) a *= 0.25;
-    if (u > 0.905 && u < 0.925) a *= 0.35;
+            const idx = (y * width + x) * 4;
+            const n = fbm3D(vx, vy, vz, 6, 2.6, 4.2);
+            const detail = fbm3D(vx, vy, vz, 4, 11.0, 9.7);
 
-    // 内外边缘渐隐
-    a *= Math.min(1, Math.min(u, 1 - u) * 14);
+            // Polar ice cap threshold
+            const iceMask = lat + (detail - 0.5) * 0.14;
+            if (iceMask > 0.84) {
+              diffImg.data[idx] = 238;
+              diffImg.data[idx + 1] = 245;
+              diffImg.data[idx + 2] = 252;
+              diffImg.data[idx + 3] = 255;
+              specImg.data[idx] = specImg.data[idx + 1] = specImg.data[idx + 2] = 60;
+              specImg.data[idx + 3] = 255;
+              bumpImg.data[idx] = bumpImg.data[idx + 1] = bumpImg.data[idx + 2] = 155;
+              bumpImg.data[idx + 3] = 255;
+              continue;
+            }
 
-    // 颜色
-    const r = 236 - 45 * (1 - a);
-    const g = 222 - 55 * (1 - a);
-    const b = 188 - 70 * (1 - a);
+            const landThreshold = 0.51;
+            if (n < landThreshold) {
+              // Ocean gradient (deep ocean to shallow coastal shelf)
+              const depth = Math.min(1, Math.max(0, n / landThreshold));
+              const shelf = Math.pow(depth, 3.5);
+              diffImg.data[idx] = Math.round(8 + shelf * 36);
+              diffImg.data[idx + 1] = Math.round(35 + shelf * 95);
+              diffImg.data[idx + 2] = Math.round(92 + shelf * 115);
+              diffImg.data[idx + 3] = 255;
 
-    for (let y = 0; y < H; y++) {
-      const i = (y * W + x) * 4;
-      d[i] = r; d[i + 1] = g; d[i + 2] = b;
-      d[i + 3] = a * 255;
-    }
-  }
+              // High specular reflection on oceans
+              specImg.data[idx] = specImg.data[idx + 1] = specImg.data[idx + 2] = 210;
+              specImg.data[idx + 3] = 255;
+              bumpImg.data[idx] = bumpImg.data[idx + 1] = bumpImg.data[idx + 2] = 90;
+              bumpImg.data[idx + 3] = 255;
+            } else {
+              // Continental landmass
+              const elev = Math.min(1, (n - landThreshold) / (1 - landThreshold));
+              // Subtropical desert belt around lat 0.18 - 0.38
+              const aridity = Math.exp(-Math.pow((lat - 0.26) / 0.14, 2)) * detail;
+              let r, g, b;
+              if (elev > 0.62) {
+                // Mountain ranges & snow peaks
+                const m = (elev - 0.62) / 0.38;
+                r = 120 + m * 115;
+                g = 112 + m * 120;
+                b = 104 + m * 128;
+              } else if (aridity > 0.44) {
+                // Sahara / Arabian / Outback sandy tones
+                r = 188 + detail * 35;
+                g = 154 + detail * 28;
+                b = 98 + detail * 20;
+              } else {
+                // Lush forest & grassland
+                r = 34 + elev * 75 + detail * 18;
+                g = 96 + (1 - elev) * 42 + detail * 25;
+                b = 38 + elev * 30;
+              }
+              diffImg.data[idx] = Math.min(255, Math.round(r));
+              diffImg.data[idx + 1] = Math.min(255, Math.round(g));
+              diffImg.data[idx + 2] = Math.min(255, Math.round(b));
+              diffImg.data[idx + 3] = 255;
 
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.anisotropy = 8;
-  return tex;
-}
+              specImg.data[idx] = specImg.data[idx + 1] = specImg.data[idx + 2] = 18;
+              specImg.data[idx + 3] = 255;
 
-/* ============================================================
-   1. 渲染器 / 场景 / 相机
-   ============================================================ */
-const renderer = new THREE.WebGLRenderer({
-  antialias: true,
-  powerPreference: 'high-performance'
-});
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.setClearColor(0x000000, 1);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
-document.body.appendChild(renderer.domElement);
+              const bumpVal = Math.min(255, Math.round(115 + elev * 135 + detail * 20));
+              bumpImg.data[idx] = bumpImg.data[idx + 1] = bumpImg.data[idx + 2] = bumpVal;
+              bumpImg.data[idx + 3] = 255;
+            }
+          }
+        }
 
-const scene = new THREE.Scene();
+        diffCtx.putImageData(diffImg, 0, 0);
+        specCtx.putImageData(specImg, 0, 0);
+        bumpCtx.putImageData(bumpImg, 0, 0);
 
-const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 4000);
-camera.position.set(0, 22, 46);
+        // Cloud Canvas
+        const cloudCanvas = document.createElement('canvas');
+        cloudCanvas.width = width;
+        cloudCanvas.height = height;
+        const cloudCtx = cloudCanvas.getContext('2d');
+        const cloudImg = cloudCtx.createImageData(width, height);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.055;
-controls.minDistance = 3.2;
-controls.maxDistance = 190;
-controls.target.set(0, 0, 0);
+        for (let y = 0; y < height; y++) {
+          const v = y / height;
+          const phi = v * Math.PI;
+          const sinPhi = Math.sin(phi);
+          const cosPhi = Math.cos(phi);
+          for (let x = 0; x < width; x++) {
+            const u = x / width;
+            const theta = u * Math.PI * 2;
+            // Swirl coordinates for trade winds / cyclones
+            const swirl = Math.sin(phi * 6.0) * 0.25;
+            const vx = sinPhi * Math.cos(theta + swirl);
+            const vy = cosPhi;
+            const vz = sinPhi * Math.sin(theta + swirl);
 
-/* 全局共享贴图 */
-const dotTexture  = createDotTexture();
-const glowTexture = createGlowTexture();
+            const cNoise = fbm3D(vx, vy, vz, 5, 3.8, 17.3);
+            const alpha = cNoise > 0.52 ? Math.min(245, Math.pow((cNoise - 0.52) / 0.48, 1.3) * 255) : 0;
+            const idx = (y * width + x) * 4;
+            cloudImg.data[idx] = 255;
+            cloudImg.data[idx + 1] = 255;
+            cloudImg.data[idx + 2] = 255;
+            cloudImg.data[idx + 3] = Math.round(alpha);
+          }
+        }
+        cloudCtx.putImageData(cloudImg, 0, 0);
 
-/* ============================================================
-   2. 星空背景
-   ============================================================ */
-(function createStarField() {
-  const N = 7000;
-  const positions = new Float32Array(N * 3);
-  const colors    = new Float32Array(N * 3);
-  const col = new THREE.Color();
+        return {
+          map: new THREE.CanvasTexture(diffCanvas),
+          specularMap: new THREE.CanvasTexture(specCanvas),
+          bumpMap: new THREE.CanvasTexture(bumpCanvas),
+          cloudMap: new THREE.CanvasTexture(cloudCanvas)
+        };
+      }
 
-  for (let i = 0; i < N; i++) {
-    const r = 260 + Math.random() * 900;
-    const u = Math.random() * 2 - 1;
-    const phi = Math.random() * Math.PI * 2;
-    const s = Math.sqrt(Math.max(0, 1 - u * u));
+      function createMoonTextures() {
+        const width = 1024;
+        const height = 512;
 
-    positions[i * 3]     = r * s * Math.cos(phi);
-    positions[i * 3 + 1] = r * u;
-    positions[i * 3 + 2] = r * s * Math.sin(phi);
+        const diffCanvas = document.createElement('canvas');
+        diffCanvas.width = width;
+        diffCanvas.height = height;
+        const diffCtx = diffCanvas.getContext('2d');
+        const diffImg = diffCtx.createImageData(width, height);
 
-    const t = Math.random();
-    if (t < 0.14)      col.setRGB(0.72, 0.84, 1.00);  // 蓝白
-    else if (t < 0.24) col.setRGB(1.00, 0.86, 0.68);  // 暖白
-    else               col.setRGB(1.00, 1.00, 1.00);
+        const bumpCanvas = document.createElement('canvas');
+        bumpCanvas.width = width;
+        bumpCanvas.height = height;
+        const bumpCtx = bumpCanvas.getContext('2d');
+        const bumpImg = bumpCtx.createImageData(width, height);
 
-    const b = 0.30 + Math.random() * 0.70;
-    colors[i * 3]     = col.r * b;
-    colors[i * 3 + 1] = col.g * b;
-    colors[i * 3 + 2] = col.b * b;
-  }
+        // Pre-generate 90 procedural craters on the 3D sphere
+        const craters = [];
+        for (let i = 0; i < 90; i++) {
+          const u = pseudoNoise(i, 1.1, 2.2, 5.5);
+          const v = pseudoNoise(i, 3.3, 4.4, 8.8);
+          const theta = u * Math.PI * 2;
+          const phi = Math.acos(2 * v - 1);
+          craters.push({
+            x: Math.sin(phi) * Math.cos(theta),
+            y: Math.cos(phi),
+            z: Math.sin(phi) * Math.sin(theta),
+            radius: 0.035 + Math.pow(pseudoNoise(i, 7.7, 1.9, 3.1), 2.6) * 0.22,
+            depth: 0.45 + pseudoNoise(i, 2.5, 6.1, 9.0) * 0.55
+          });
+        }
 
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        for (let y = 0; y < height; y++) {
+          const v = y / height;
+          const phi = v * Math.PI;
+          const sinPhi = Math.sin(phi);
+          const cosPhi = Math.cos(phi);
 
-  const mat = new THREE.PointsMaterial({
-    size: 2.2,
-    map: dotTexture,
-    vertexColors: true,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    sizeAttenuation: true
-  });
+          for (let x = 0; x < width; x++) {
+            const u = x / width;
+            const theta = u * Math.PI * 2;
+            const vx = sinPhi * Math.cos(theta);
+            const vy = cosPhi;
+            const vz = sinPhi * Math.sin(theta);
 
-  scene.add(new THREE.Points(geo, mat));
-})();
+            // Near side faces -X in Moon local coords; bias dark maria on near side
+            const nearSideBias = Math.max(0, -vx) * 0.12;
+            const mariaNoise = fbm3D(vx, vy, vz, 4, 2.1, 31.4) - nearSideBias;
+            const microNoise = fbm3D(vx, vy, vz, 5, 14.0, 73.1);
 
-/* ============================================================
-   3. 光照
-   ============================================================ */
-// 太阳光（decay = 0，保证远近行星都能看清）
-const sunLight = new THREE.PointLight(0xfff0d6, 1.9, 0, 0);
-scene.add(sunLight);
+            // Base highland vs basaltic mare albedo
+            let albedo = mariaNoise < 0.46
+              ? 82 + (mariaNoise / 0.46) * 45 // Dark lunar maria
+              : 138 + ((mariaNoise - 0.46) / 0.54) * 68; // Bright highlands
 
-// 微弱环境光，避免夜面全黑
-scene.add(new THREE.AmbientLight(0x2a3a5c, 0.55));
+            let elevation = albedo + (microNoise - 0.5) * 32;
 
-/* ============================================================
-   4. 太阳
-   ============================================================ */
-const SUN_RADIUS = 1.75;
+            // Accumulate crater rims and bowls
+            for (let c = 0; c < craters.length; c++) {
+              const cr = craters[c];
+              const dx = vx - cr.x;
+              const dy = vy - cr.y;
+              const dz = vz - cr.z;
+              const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              if (dist < cr.radius * 1.35) {
+                const norm = dist / cr.radius;
+                if (norm < 0.78) {
+                  // Bowl depression
+                  const bowl = Math.cos((norm / 0.78) * (Math.PI * 0.5));
+                  elevation -= bowl * 36 * cr.depth;
+                  albedo -= bowl * 14 * cr.depth;
+                } else if (norm < 1.15) {
+                  // Raised bright crater rim
+                  const rim = Math.sin(((norm - 0.78) / 0.37) * Math.PI);
+                  elevation += rim * 28 * cr.depth;
+                  albedo += rim * 22 * cr.depth;
+                }
+              }
+            }
 
-const sun = new THREE.Mesh(
-  new THREE.SphereGeometry(SUN_RADIUS, 64, 48),
-  new THREE.MeshBasicMaterial({ map: createSunTexture() })
-);
-scene.add(sun);
+            const idx = (y * width + x) * 4;
+            const gray = Math.max(38, Math.min(235, Math.round(albedo + (microNoise - 0.5) * 18)));
+            diffImg.data[idx] = gray;
+            diffImg.data[idx + 1] = Math.max(35, gray - 3);
+            diffImg.data[idx + 2] = Math.max(32, gray - 7);
+            diffImg.data[idx + 3] = 255;
 
-// 辉光（两层，内层紧凑、外层弥散）
-const glowInner = new THREE.Sprite(new THREE.SpriteMaterial({
-  map: glowTexture,
-  color: 0xffd27a,
-  transparent: true,
-  opacity: 0.85,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  depthTest: true
-}));
-glowInner.scale.setScalar(SUN_RADIUS * 5.2);
-sun.add(glowInner);
+            const bumpVal = Math.max(10, Math.min(250, Math.round(elevation)));
+            bumpImg.data[idx] = bumpImg.data[idx + 1] = bumpImg.data[idx + 2] = bumpVal;
+            bumpImg.data[idx + 3] = 255;
+          }
+        }
 
-const glowOuter = new THREE.Sprite(new THREE.SpriteMaterial({
-  map: glowTexture,
-  color: 0xff9a3c,
-  transparent: true,
-  opacity: 0.38,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-  depthTest: true
-}));
-glowOuter.scale.setScalar(SUN_RADIUS * 12);
-sun.add(glowOuter);
+        diffCtx.putImageData(diffImg, 0, 0);
+        bumpCtx.putImageData(bumpImg, 0, 0);
 
-/* ============================================================
-   5. 行星数据
-   注：距离与半径为观赏性缩放，周期比例接近真实
-   ============================================================ */
-const PLANETS = [
-  {
-    name: '水星', radius: 0.20, dist: 4.2,  period: 0.241,
-    dayPeriod: 58.6,  tilt: 0.03,
-    colorA: '#a2958a', colorB: '#5b524b', bands: 14, seed: 1
-  },
-  {
-    name: '金星', radius: 0.33, dist: 6.1,  period: 0.615,
-    dayPeriod: -243,  tilt: 0.05,
-    colorA: '#f0d8a8', colorB: '#b08b52', bands: 9,  seed: 2
-  },
-  {
-    name: '地球', radius: 0.36, dist: 8.3,  period: 1.0,
-    dayPeriod: 1.0,   tilt: 0.41,
-    colorA: '#1f5fc4', colorB: '#3f8f4a', bands: 5,  seed: 3,
-    earth: true, moon: true
-  },
-  {
-    name: '火星', radius: 0.25, dist: 10.8, period: 1.881,
-    dayPeriod: 1.03,  tilt: 0.44,
-    colorA: '#c75a38', colorB: '#7d3a25', bands: 10, seed: 4
-  },
-  {
-    name: '木星', radius: 0.95, dist: 15.8, period: 11.86,
-    dayPeriod: 0.41,  tilt: 0.05,
-    colorA: '#dcc4a2', colorB: '#9c7048', bands: 20, seed: 5
-  },
-  {
-    name: '土星', radius: 0.80, dist: 21.0, period: 29.46,
-    dayPeriod: 0.44,  tilt: 0.47,
-    colorA: '#e8dcb2', colorB: '#b09a62', bands: 15, seed: 6,
-    ring: true
-  },
-  {
-    name: '天王星', radius: 0.52, dist: 25.8, period: 84.0,
-    dayPeriod: -0.72, tilt: 1.71,
-    colorA: '#b5e2ea', colorB: '#6aa9b8', bands: 6,  seed: 7
-  },
-  {
-    name: '海王星', radius: 0.50, dist: 30.2, period: 164.8,
-    dayPeriod: 0.67,  tilt: 0.49,
-    colorA: '#5678e0', colorB: '#283d94', bands: 7,  seed: 8
-  }
-];
+        return {
+          map: new THREE.CanvasTexture(diffCanvas),
+          bumpMap: new THREE.CanvasTexture(bumpCanvas)
+        };
+      }
 
-/* 角速度系数：公转周期越短转得越快（做了压缩，保证外行星也看得见动） */
-const ORBIT_SPEED_K = 0.52;     // 地球约 12 秒一圈
-const ORBIT_EXP     = 0.60;
-const SPIN_K        = 0.35;     // 自转系数
+      // =========================================================================
+      // 3. Three.js Scene, Camera, Lighting & Celestial Bodies Initialization
+      // =========================================================================
+      const container = document.getElementById('canvas-container');
+      const scene = new THREE.Scene();
 
-/* ============================================================
-   6. 创建行星
-   ============================================================ */
-const planets = [];
-const ringTexture = createRingTexture();
+      const camera = new THREE.PerspectiveCamera(
+        45,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        2000
+      );
 
-PLANETS.forEach((p) => {
-  /* —— 轨道枢轴（绕 Y 轴旋转产生公转）—— */
-  const pivot = new THREE.Object3D();
-  scene.add(pivot);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
 
-  /* —— 位置持有者 —— */
-  const holder = new THREE.Object3D();
-  holder.position.x = p.dist;
-  holder.rotation.z = p.tilt;          // 自转轴倾角
-  pivot.add(holder);
+      // Ambient starlight + intense directional sunlight from +Z/+X
+      // Let's place the Sun along +X (direction vector (1, 0, 0)) so New Moon is at +X (between Earth and Sun)
+      const SUN_DIR = new THREE.Vector3(1, 0, 0).normalize();
+      const ambientLight = new THREE.AmbientLight(0x28354a, 0.55);
+      scene.add(ambientLight);
 
-  /* —— 行星球体 —— */
-  const texture = createPlanetTexture(p);
-  const material = new THREE.MeshStandardMaterial({
-    map: texture,
-    roughness: 0.92,
-    metalness: 0.0
-  });
+      const sunLight = new THREE.DirectionalLight(0xfffbeb, 1.95);
+      sunLight.position.copy(SUN_DIR).multiplyScalar(180);
+      sunLight.castShadow = true;
+      sunLight.shadow.mapSize.width = 2048;
+      sunLight.shadow.mapSize.height = 2048;
+      sunLight.shadow.camera.near = 10;
+      sunLight.shadow.camera.far = 350;
+      const d = 30;
+      sunLight.shadow.camera.left = -d;
+      sunLight.shadow.camera.right = d;
+      sunLight.shadow.camera.top = d;
+      sunLight.shadow.camera.bottom = -d;
+      scene.add(sunLight);
 
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(p.radius, 40, 28),
-    material
-  );
-  holder.add(mesh);
+      // Subtle earthshine / fill light
+      const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x0f172a, 0.22);
+      scene.add(hemiLight);
 
-  /* —— 土星环 —— */
-  if (p.ring) {
-    const inner = p.radius * 1.35;
-    const outer = p.radius * 2.35;
+      // 3.1 Multi-layered Starfield & Distant Sun Indicator
+      const starGroup = new THREE.Group();
+      scene.add(starGroup);
+      (function buildStarfield() {
+        const starCount = 3200;
+        const positions = new Float32Array(starCount * 3);
+        const colors = new Float32Array(starCount * 3);
+        for (let i = 0; i < starCount; i++) {
+          const r = 380 + Math.random() * 450;
+          const theta = Math.random() * Math.PI * 2;
+          const u = Math.random() * 2 - 1;
+          const phi = Math.acos(u);
+          positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+          positions[i * 3 + 1] = r * Math.cos(phi);
+          positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
 
-    const ringGeo = new THREE.RingGeometry(inner, outer, 160, 4);
+          // Subtle stellar color temperature variation
+          const tint = Math.random();
+          if (tint < 0.25) {
+            colors[i * 3] = 0.75; colors[i * 3 + 1] = 0.86; colors[i * 3 + 2] = 1.0;
+          } else if (tint < 0.45) {
+            colors[i * 3] = 1.0; colors[i * 3 + 1] = 0.93; colors[i * 3 + 2] = 0.78;
+          } else {
+            colors[i * 3] = 0.95; colors[i * 3 + 1] = 0.97; colors[i * 3 + 2] = 1.0;
+          }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const mat = new THREE.PointsMaterial({
+          size: 1.35,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.88
+        });
+        starGroup.add(new THREE.Points(geo, mat));
 
-    // 重写 UV：让 u 沿半径方向展开
-    const posAttr = ringGeo.attributes.position;
-    const uvAttr  = ringGeo.attributes.uv;
-    const v3 = new THREE.Vector3();
-    for (let i = 0; i < posAttr.count; i++) {
-      v3.fromBufferAttribute(posAttr, i);
-      const r = v3.length();
-      const u = (r - inner) / (outer - inner);
-      uvAttr.setXY(i, u, 0.5);
-    }
-    uvAttr.needsUpdate = true;
+        // Distant Sun Beacon at +X
+        const sunGlowCanvas = document.createElement('canvas');
+        sunGlowCanvas.width = 256;
+        sunGlowCanvas.height = 256;
+        const sCtx = sunGlowCanvas.getContext('2d');
+        const grad = sCtx.createRadialGradient(128, 128, 8, 128, 128, 124);
+        grad.addColorStop(0, 'rgba(255, 255, 240, 1)');
+        grad.addColorStop(0.2, 'rgba(253, 224, 71, 0.85)');
+        grad.addColorStop(0.5, 'rgba(245, 158, 11, 0.28)');
+        grad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+        sCtx.fillStyle = grad;
+        sCtx.fillRect(0, 0, 256, 256);
 
-    const ringMat = new THREE.MeshStandardMaterial({
-      map: ringTexture,
-      transparent: true,
-      side: THREE.DoubleSide,
-      roughness: 0.85,
-      metalness: 0.0,
-      depthWrite: false,
-      opacity: 0.95
-    });
+        const sunSprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: new THREE.CanvasTexture(sunGlowCanvas),
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          })
+        );
+        sunSprite.position.set(280, 0, 0);
+        sunSprite.scale.set(55, 55, 1);
+        starGroup.add(sunSprite);
+      })();
 
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    holder.add(ring);
-  }
+      // 3.2 Earth System Hierarchy
+      // earthPivot holds Earth's 23.44 deg obliquity relative to the Ecliptic (XZ plane)
+      const earthSystemGroup = new THREE.Group();
+      scene.add(earthSystemGroup);
 
-  /* —— 地球的月球 —— */
-  let moonPivot = null;
-  if (p.moon) {
-    moonPivot = new THREE.Object3D();
-    moonPivot.rotation.z = 0.09;
-    holder.add(moonPivot);
+      const earthObliquityGroup = new THREE.Group();
+      earthObliquityGroup.rotation.z = THREE.MathUtils.degToRad(ASTRO.EARTH_TILT_DEG);
+      earthSystemGroup.add(earthObliquityGroup);
 
-    const moon = new THREE.Mesh(
-      new THREE.SphereGeometry(0.095, 20, 14),
-      new THREE.MeshStandardMaterial({ color: 0xb8b8b8, roughness: 1.0 })
-    );
-    moon.position.x = 0.75;
-    moonPivot.add(moon);
-  }
+      const earthTextures = createEarthTextures();
+      const earthGeo = new THREE.SphereGeometry(1, 64, 64);
+      const earthMat = new THREE.MeshPhongMaterial({
+        map: earthTextures.map,
+        specularMap: earthTextures.specularMap,
+        specular: new THREE.Color(0x5588aa),
+        shininess: 28,
+        bumpMap: earthTextures.bumpMap,
+        bumpScale: 0.035
+      });
+      const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+      earthMesh.castShadow = true;
+      earthMesh.receiveShadow = true;
+      earthObliquityGroup.add(earthMesh);
 
-  /* —— 轨道线 —— */
-  const pts = [];
-  const SEG = 220;
-  for (let i = 0; i <= SEG; i++) {
-    const a = (i / SEG) * Math.PI * 2;
-    pts.push(new THREE.Vector3(Math.cos(a) * p.dist, 0, Math.sin(a) * p.dist));
-  }
-  const orbitGeo = new THREE.BufferGeometry().setFromPoints(pts);
-  const orbitMat = new THREE.LineBasicMaterial({
-    color: 0x3d6aa8,
-    transparent: true,
-    opacity: 0.28
-  });
-  scene.add(new THREE.LineLoop(orbitGeo, orbitMat));
+      // Cloud Layer
+      const cloudGeo = new THREE.SphereGeometry(1.018, 64, 64);
+      const cloudMat = new THREE.MeshLambertMaterial({
+        map: earthTextures.cloudMap,
+        transparent: true,
+        opacity: 0.86,
+        depthWrite: false
+      });
+      const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+      earthObliquityGroup.add(cloudMesh);
 
-  /* —— 保存运行时数据 —— */
-  planets.push({
-    name: p.name,
-    pivot,
-    holder,
-    mesh,
-    moonPivot,
-    omega:     ORBIT_SPEED_K / Math.pow(p.period, ORBIT_EXP),   // rad/s
-    spinSpeed: SPIN_K / Math.abs(p.dayPeriod) * Math.sign(p.dayPeriod),
-    phase:     Math.random() * Math.PI * 2                      // 初始相位错开
-  });
-});
+      // Atmospheric Fresnel Rim Glow Shader
+      const atmoGeo = new THREE.SphereGeometry(1.065, 64, 64);
+      const atmoMat = new THREE.ShaderMaterial({
+        vertexShader: `
+          varying vec3 vNormal;
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          varying vec3 vNormal;
+          void main() {
+            float intensity = pow(0.66 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.6);
+            gl_FragColor = vec4(0.28, 0.68, 1.0, 1.0) * intensity * 0.85;
+          }
+        `,
+        blending: THREE.AdditiveBlending,
+        side: THREE.BackSide,
+        transparent: true,
+        depthWrite: false
+      });
+      const atmoMesh = new THREE.Mesh(atmoGeo, atmoMat);
+      earthObliquityGroup.add(atmoMesh);
 
-/* ============================================================
-   7. 动画
-   ============================================================ */
-const clock = new THREE.Clock();
-const loadingEl = document.getElementById('loading');
+      // Earth Rotation Axis Rod & Equatorial Ring
+      const earthAxisGroup = new THREE.Group();
+      earthObliquityGroup.add(earthAxisGroup);
+      (function buildEarthAxis() {
+        const axisMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85 });
+        const pts = [new THREE.Vector3(0, -1.75, 0), new THREE.Vector3(0, 1.75, 0)];
+        const axisGeo = new THREE.BufferGeometry().setFromPoints(pts);
+        earthAxisGroup.add(new THREE.Line(axisGeo, axisMat));
 
-function animate() {
-  requestAnimationFrame(animate);
+        // North Pole Cone Tip
+        const cone = new THREE.Mesh(
+          new THREE.ConeGeometry(0.06, 0.18, 16),
+          new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+        );
+        cone.position.set(0, 1.75, 0);
+        earthAxisGroup.add(cone);
 
-  const dt = Math.min(clock.getDelta(), 0.1);   // 防止切标签页后跳帧
+        // Equatorial circle
+        const eqPts = [];
+        for (let i = 0; i <= 64; i++) {
+          const a = (i / 64) * Math.PI * 2;
+          eqPts.push(new THREE.Vector3(Math.cos(a) * 1.08, 0, Math.sin(a) * 1.08));
+        }
+        const eqLine = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(eqPts),
+          new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.35 })
+        );
+        earthAxisGroup.add(eqLine);
+      })();
 
-  // 太阳自转 + 辉光轻微呼吸
-  sun.rotation.y += dt * 0.045;
-  const pulse = 1 + Math.sin(clock.elapsedTime * 1.4) * 0.025;
-  glowInner.scale.setScalar(SUN_RADIUS * 5.2 * pulse);
-  glowOuter.scale.setScalar(SUN_RADIUS * 12 * (2 - pulse));
+      // 3.3 Moon System Hierarchy (Inclined by 5.145 deg to Ecliptic)
+      const lunarOrbitPlaneGroup = new THREE.Group();
+      lunarOrbitPlaneGroup.rotation.z = THREE.MathUtils.degToRad(ASTRO.MOON_ORBIT_INCLINATION_DEG);
+      scene.add(lunarOrbitPlaneGroup);
 
-  // 行星运动
-  for (const p of planets) {
-    p.pivot.rotation.y += dt * p.omega;
-    p.mesh.rotation.y  += dt * p.spinSpeed;
-    if (p.moonPivot) p.moonPivot.rotation.y += dt * 1.1;
-  }
+      const moonPositionGroup = new THREE.Group();
+      lunarOrbitPlaneGroup.add(moonPositionGroup);
 
-  controls.update();
-  renderer.render(scene, camera);
-}
+      const moonTextures = createMoonTextures();
+      const moonGeo = new THREE.SphereGeometry(1, 64, 64);
+      const moonMat = new THREE.MeshPhongMaterial({
+        map: moonTextures.map,
+        bumpMap: moonTextures.bumpMap,
+        bumpScale: 0.045,
+        specular: new THREE.Color(0x111111),
+        shininess: 4
+      });
+      const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+      moonMesh.castShadow = true;
+      moonMesh.receiveShadow = true;
+      moonPositionGroup.add(moonMesh);
 
-/* ============================================================
-   8. 自适应 & 启动
-   ============================================================ */
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.setSize(innerWidth, innerHeight);
-});
+      // Moon Axis & Near-side Indicator
+      const moonAxisGroup = new THREE.Group();
+      moonPositionGroup.add(moonAxisGroup);
+      (function buildMoonAxis() {
+        const axisMat = new THREE.LineBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.85 });
+        const pts = [new THREE.Vector3(0, -1.8, 0), new THREE.Vector3(0, 1.8, 0)];
+        moonAxisGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), axisMat));
 
-// 给行星一个随机初始相位，画面不会一开始就排成一条线
-planets.forEach((p) => { p.pivot.rotation.y = p.phase; });
+        const cone = new THREE.Mesh(
+          new THREE.ConeGeometry(0.12, 0.32, 12),
+          new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
+        );
+        cone.position.set(0, 1.8, 0);
+        moonAxisGroup.add(cone);
+      })();
 
-animate();
+      // 3.4 Auxiliary Visual Guides: Orbit Path, Ecliptic Reference Grid, Tidal Lock Line & Sunlight Rays
+      const orbitGuideGroup = new THREE.Group();
+      scene.add(orbitGuideGroup);
 
-// 首帧渲染完成后隐藏 loading
-requestAnimationFrame(() => {
-  requestAnimationFrame(() => {
-    loadingEl.classList.add('hide');
-    setTimeout(() => loadingEl.remove(), 900);
-  });
-});
-</script>
+      let lunarOrbitLine = null;
+      let eclipticRingLine = null;
+      const perigeeMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.14, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0x34d399 })
+      );
+      const apogeeMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.14, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xc084fc })
+      );
+      lunarOrbitPlaneGroup.add(perigeeMarker);
+      lunarOrbitPlaneGroup.add(apogeeMarker);
+
+      // Barycenter Marker & Tidal Lock Connecting Line
+      const barycenterMarker = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.15, 1),
+        new THREE.MeshBasicMaterial({ color: 0xf43f5e, wireframe: false })
+      );
+      scene.add(barycenterMarker);
+
+      const tidalLockGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(10, 0, 0)
+      ]);
+      const tidalLockLine = new THREE.Line(
+        tidalLockGeo,
+        new THREE.LineDashedMaterial({
+          color: 0xf43f5e,
+          dashSize: 0.4,
+          gapSize: 0.25,
+          transparent: true,
+          opacity: 0.75
+        })
+      );
+      scene.add(tidalLockLine);
+
+      // Sunlight Direction Arrows Group
+      const sunlightRaysGroup = new THREE.Group();
+      scene.add(sunlightRaysGroup);
+      (function buildSunlightArrows() {
+        const arrowColor = 0xfde047;
+        const offsets = [
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 2.8, 0),
+          new THREE.Vector3(0, -2.8, 0),
+          new THREE.Vector3(0, 0, 2.8),
+          new THREE.Vector3(0, 0, -2.8)
+        ];
+        offsets.forEach((off) => {
+          const dir = new THREE.Vector3(-1, 0, 0);
+          const origin = new THREE.Vector3(24, off.y, off.z);
+          const arrow = new THREE.ArrowHelper(dir, origin, 4.5, arrowColor, 0.65, 0.35);
+          sunlightRaysGroup.add(arrow);
+        });
+      })();
+
+      function rebuildOrbitGeometry() {
+        const cfg = SCALE_CONFIG[state.scaleMode];
+        const a = cfg.semiMajorAxis;
+        const e = cfg.eccentricity;
+        const b = a * Math.sqrt(1 - e * e);
+        const c = a * e; // Focal offset (Earth is at focus (0,0,0))
+
+        // Scale Earth & Moon meshes
+        earthObliquityGroup.scale.setScalar(cfg.earthRadius);
+        moonMesh.scale.setScalar(cfg.moonRadius);
+        moonAxisGroup.scale.setScalar(cfg.moonRadius);
+
+        // Remove old lines
+        if (lunarOrbitLine) {
+          lunarOrbitPlaneGroup.remove(lunarOrbitLine);
+          lunarOrbitLine.geometry.dispose();
+        }
+        if (eclipticRingLine) {
+          orbitGuideGroup.remove(eclipticRingLine);
+          eclipticRingLine.geometry.dispose();
+        }
+
+        // Build inclined lunar elliptical path in lunarOrbitPlaneGroup
+        // Perigee at +X (r = a(1-e)), Apogee at -X (r = a(1+e))
+        const orbitPts = [];
+        const segments = 180;
+        for (let i = 0; i <= segments; i++) {
+          const nu = (i / segments) * Math.PI * 2;
+          const r = (a * (1 - e * e)) / (1 + e * Math.cos(nu));
+          // Counter-clockwise in XZ plane (viewed from +Y North Ecliptic Pole: +X -> -Z -> -X -> +Z)
+          const x = r * Math.cos(nu);
+          const z = -r * Math.sin(nu);
+          orbitPts.push(new THREE.Vector3(x, 0, z));
+        }
+        lunarOrbitLine = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(orbitPts),
+          new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 })
+        );
+        lunarOrbitPlaneGroup.add(lunarOrbitLine);
+
+        // Position Perigee (nu = 0) & Apogee (nu = PI) markers
+        perigeeMarker.position.set(a * (1 - e), 0, 0);
+        apogeeMarker.position.set(-a * (1 + e), 0, 0);
+        const markerScale = state.scaleMode === 'true' ? 1.8 : 1.0;
+        perigeeMarker.scale.setScalar(markerScale);
+        apogeeMarker.scale.setScalar(markerScale);
+
+        // Build Ecliptic Plane Reference Circle (uninclined XZ plane)
+        const eclipticPts = [];
+        for (let i = 0; i <= segments; i++) {
+          const ang = (i / segments) * Math.PI * 2;
+          eclipticPts.push(new THREE.Vector3(Math.cos(ang) * a, 0, Math.sin(ang) * a));
+        }
+        eclipticRingLine = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(eclipticPts),
+          new THREE.LineDashedMaterial({
+            color: 0x64748b,
+            dashSize: a * 0.04,
+            gapSize: a * 0.025,
+            transparent: true,
+            opacity: 0.45
+          })
+        );
+        eclipticRingLine.computeLineDistances();
+        orbitGuideGroup.add(eclipticRingLine);
+
+        // Reposition sunlight arrows outside orbit
+        sunlightRaysGroup.position.set(a * 0.35, 0, 0);
+      }
+
+      // =========================================================================
+      // 4. Custom Smooth Orbit Camera Controller (Mouse + Touch)
+      // =========================================================================
+      const camControl = {
+        spherical: new THREE.Spherical(36, THREE.MathUtils.degToRad(62), THREE.MathUtils.degToRad(35)),
+        targetSpherical: new THREE.Spherical(36, THREE.MathUtils.degToRad(62), THREE.MathUtils.degToRad(35)),
+        lookAtCurrent: new THREE.Vector3(0, 0, 0),
+        lookAtTarget: new THREE.Vector3(0, 0, 0),
+        isDragging: false,
+        prevX: 0,
+        prevY: 0,
+        pinchDist: 0
+      };
+
+      function setCameraPreset(mode) {
+        state.cameraMode = mode;
+        const cfg = SCALE_CONFIG[state.scaleMode];
+        const a = cfg.semiMajorAxis;
+
+        document.querySelectorAll('.cam-btn').forEach((btn) => {
+          const active = btn.getAttribute('data-cam') === mode;
+          btn.className = active
+            ? 'cam-btn ' + (mode === 'ecliptic' ? 'col-span-2 ' : '') + 'px-2 py-1.5 rounded-lg text-[11px] font-medium bg-sky-500/30 text-sky-200 border border-sky-400/50 transition'
+            : 'cam-btn ' + (mode === 'ecliptic' ? 'col-span-2 ' : '') + 'px-2 py-1.5 rounded-lg text-[11px] font-medium bg-slate-800/70 hover:bg-slate-700/70 text-slate-300 border border-slate-700 transition';
+        });
+
+        if (mode === 'system') {
+          camControl.targetSpherical.radius = a * 2.15;
+          camControl.targetSpherical.phi = THREE.MathUtils.degToRad(62);
+          camControl.targetSpherical.theta = THREE.MathUtils.degToRad(35);
+        } else if (mode === 'earth') {
+          camControl.targetSpherical.radius = cfg.earthRadius * 4.2;
+          camControl.targetSpherical.phi = THREE.MathUtils.degToRad(72);
+        } else if (mode === 'moon') {
+          camControl.targetSpherical.radius = cfg.moonRadius * 5.8;
+          camControl.targetSpherical.phi = THREE.MathUtils.degToRad(75);
+        } else if (mode === 'top') {
+          camControl.targetSpherical.radius = a * 2.35;
+          camControl.targetSpherical.phi = THREE.MathUtils.degToRad(4);
+          camControl.targetSpherical.theta = 0;
+        } else if (mode === 'ecliptic') {
+          camControl.targetSpherical.radius = a * 2.1;
+          camControl.targetSpherical.phi = THREE.MathUtils.degToRad(90);
+          camControl.targetSpherical.theta = 0;
+        }
+      }
+
+      // Pointer / Touch Event Listeners on Canvas
+      container.addEventListener('pointerdown', (e) => {
+        camControl.isDragging = true;
+        camControl.prevX = e.clientX;
+        camControl.prevY = e.clientY;
+      });
+
+      window.addEventListener('pointermove', (e) => {
+        if (!camControl.isDragging) return;
+        const dx = e.clientX - camControl.prevX;
+        const dy = e.clientY - camControl.prevY;
+        camControl.prevX = e.clientX;
+        camControl.prevY = e.clientY;
+
+        camControl.targetSpherical.theta -= dx * 0.0065;
+        camControl.targetSpherical.phi = Math.max(
+          0.04,
+          Math.min(Math.PI - 0.04, camControl.targetSpherical.phi - dy * 0.0065)
+        );
+      });
+
+      window.addEventListener('pointerup', () => {
+        camControl.isDragging = false;
+      });
+
+      container.addEventListener(
+        'wheel',
+        (e) => {
+          e.preventDefault();
+          const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+          camControl.targetSpherical.radius = Math.max(
+            1.8,
+            Math.min(260, camControl.targetSpherical.radius * zoomFactor)
+          );
+        },
+        { passive: false }
+      );
+
+      // Touch pinch zoom support
+      container.addEventListener(
+        'touchstart',
+        (e) => {
+          if (e.touches.length === 2) {
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            camControl.pinchDist = Math.hypot(dx, dy);
+          }
+        },
+        { passive: true }
+      );
+
+      container.addEventListener(
+        'touchmove',
+        (e) => {
+          if (e.touches.length === 2 && camControl.pinchDist > 0) {
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const dist = Math.hypot(dx, dy);
+            const ratio = camControl.pinchDist / Math.max(10, dist);
+            camControl.targetSpherical.radius = Math.max(
+              1.8,
+              Math.min(260, camControl.targetSpherical.radius * ratio)
+            );
+            camControl.pinchDist = dist;
+          }
+        },
+        { passive: true }
+      );
+
+      // =========================================================================
+      // 5. 2D Moon Phase PiP Renderer & Astronomical Telemetry Computation
+      // =========================================================================
+      const phaseCanvas = document.getElementById('phase-canvas');
+      const phaseCtx = phaseCanvas.getContext('2d');
+
+      function getPhaseNameCN(normPhase) {
+        // normPhase in [0, 1)
+        if (normPhase < 0.035 || normPhase >= 0.965) return '新月 (朔 New Moon)';
+        if (normPhase < 0.215) return '蛾眉月 (Waxing Crescent)';
+        if (normPhase < 0.285) return '上弦月 (First Quarter)';
+        if (normPhase < 0.465) return '盈凸月 (Waxing Gibbous)';
+        if (normPhase < 0.535) return '满月 (望 Full Moon)';
+        if (normPhase < 0.715) return '亏凸月 (Waning Gibbous)';
+        if (normPhase < 0.785) return '下弦月 (Third Quarter)';
+        return '残月 (Waning Crescent)';
+      }
+
+      function drawMoonPhasePiP(phaseAngleRad) {
+        // phaseAngleRad: 0 = New Moon, PI = Full Moon, 2*PI = New Moon
+        const w = phaseCanvas.width;
+        const h = phaseCanvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const r = w * 0.42;
+
+        phaseCtx.clearRect(0, 0, w, h);
+
+        // Subtle space background
+        phaseCtx.fillStyle = '#020617';
+        phaseCtx.fillRect(0, 0, w, h);
+
+        // Draw unlit lunar disc (earthshine dark side)
+        phaseCtx.save();
+        phaseCtx.beginPath();
+        phaseCtx.arc(cx, cy, r, 0, Math.PI * 2);
+        phaseCtx.fillStyle = '#1e293b';
+        phaseCtx.fill();
+
+        // Draw illuminated portion accurately using terminator ellipse
+        const cosPhase = Math.cos(phaseAngleRad);
+        const isWaxing = Math.sin(phaseAngleRad) >= 0; // 0..PI waxing (right side lit in N. hemisphere)
+
+        phaseCtx.fillStyle = '#fef08a';
+        phaseCtx.beginPath();
+        // Semicircle on lit limb
+        phaseCtx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, !isWaxing);
+        // Elliptical terminator curve
+        const rx = Math.abs(cosPhase) * r;
+        // Sweep terminator
+        const steps = 40;
+        for (let i = 0; i <= steps; i++) {
+          const t = (i / steps) * Math.PI - Math.PI / 2; // -PI/2 to PI/2
+          const y = cy - Math.sin(t) * r;
+          const xSign = isWaxing ? -Math.sign(cosPhase) : Math.sign(cosPhase);
+          const x = cx + xSign * Math.cos(t) * rx;
+          if (i === 0) {
+            phaseCtx.lineTo(x, y);
+          } else {
+            phaseCtx.lineTo(x, y);
+          }
+        }
+        phaseCtx.closePath();
+        phaseCtx.fill();
+
+        // Subtle surface maria shading overlay on disc
+        const grad = phaseCtx.createRadialGradient(cx - r * 0.25, cy - r * 0.2, r * 0.1, cx, cy, r);
+        grad.addColorStop(0, 'rgba(148, 163, 184, 0.18)');
+        grad.addColorStop(0.65, 'rgba(71, 85, 105, 0.22)');
+        grad.addColorStop(1, 'rgba(15, 23, 42, 0.45)');
+        phaseCtx.beginPath();
+        phaseCtx.arc(cx, cy, r, 0, Math.PI * 2);
+        phaseCtx.fillStyle = grad;
+        phaseCtx.fill();
+        phaseCtx.restore();
+      }
+
+      // =========================================================================
+      // 6. Scene Update & 3D-to-2D Projected HUD Labels
+      // =========================================================================
+      const moonWorldPos = new THREE.Vector3();
+      const earthWorldPos = new THREE.Vector3();
+      const perigeeWorldPos = new THREE.Vector3();
+      const apogeeWorldPos = new THREE.Vector3();
+      const barycenterWorldPos = new THREE.Vector3();
+
+      function projectLabel(el, worldVec, yOffsetPx) {
+        if (!state.showLabels) {
+          el.style.opacity = '0';
+          return;
+        }
+        const v = worldVec.clone();
+        v.project(camera);
+        if (v.z < -1 || v.z > 1) {
+          el.style.opacity = '0';
+          return;
+        }
+        const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-(v.y * 0.5) + 0.5) * window.innerHeight - (yOffsetPx || 0);
+        el.style.left = `${x.toFixed(1)}px`;
+        el.style.top = `${y.toFixed(1)}px`;
+        el.style.opacity = '1';
+      }
+
+      function updateSimulation(dtSeconds) {
+        if (state.isPlaying) {
+          state.synodicDay = (state.synodicDay + dtSeconds * state.speedDaysPerSec) % ASTRO.SYNODIC_PERIOD_DAYS;
+          const sliderDay = document.getElementById('slider-day');
+          if (sliderDay) {
+            sliderDay.value = state.synodicDay.toFixed(2);
+          }
+        }
+
+        const cfg = SCALE_CONFIG[state.scaleMode];
+        const a = cfg.semiMajorAxis;
+        const e = cfg.eccentricity;
+
+        // Phase angle relative to Sun (+X direction):
+        // At synodicDay = 0 -> New Moon (Moon at +X, between Earth at origin and Sun at +X)
+        const normPhase = (state.synodicDay % ASTRO.SYNODIC_PERIOD_DAYS) / ASTRO.SYNODIC_PERIOD_DAYS;
+        const phaseAngle = normPhase * Math.PI * 2; // 0 to 2*PI
+
+        // True anomaly nu in elliptical orbit
+        const nu = phaseAngle;
+        const rScene = (a * (1 - e * e)) / (1 + e * Math.cos(nu));
+
+        // Counter-clockwise orbit when viewed from +Y North Pole:
+        // nu = 0 -> (+r, 0, 0) [New Moon / Perigee alignment]
+        // nu = PI/2 -> (0, 0, -r) [First Quarter]
+        // nu = PI -> (-r, 0, 0) [Full Moon]
+        // nu = 3PI/2 -> (0, 0, +r) [Third Quarter]
+        const mx = rScene * Math.cos(nu);
+        const mz = -rScene * Math.sin(nu);
+        moonPositionGroup.position.set(mx, 0, mz);
+
+        // Tidal Locking (Synchronous Rotation): Moon always keeps its near side facing Earth (0,0,0)
+        // Since Moon is at (mx, 0, mz) in lunarOrbitPlaneGroup, rotating by `nu` around Y keeps -X facing origin
+        moonMesh.rotation.y = nu;
+
+        // Earth daily rotation (1 rotation per day, while cloud layer rotates slightly faster)
+        const earthRotAngle = state.synodicDay * Math.PI * 2;
+        earthMesh.rotation.y = earthRotAngle * 0.15; // Visually smooth speed so continent details are observable
+        cloudMesh.rotation.y = earthRotAngle * 0.185;
+
+        // Update world positions for Barycenter & Tidal Lock line
+        moonPositionGroup.getWorldPosition(moonWorldPos);
+        earthSystemGroup.getWorldPosition(earthWorldPos);
+
+        // Barycenter lies along the Earth-Moon line at ~0.733 Earth radii from Earth's center
+        barycenterWorldPos
+          .copy(moonWorldPos)
+          .normalize()
+          .multiplyScalar(cfg.earthRadius * ASTRO.BARYCENTER_OFFSET_RATIO);
+        barycenterMarker.position.copy(barycenterWorldPos);
+
+        // Update Tidal Lock Line geometry
+        const linePositions = tidalLockLine.geometry.attributes.position.array;
+        linePositions[0] = 0;
+        linePositions[1] = 0;
+        linePositions[2] = 0;
+        linePositions[3] = moonWorldPos.x;
+        linePositions[4] = moonWorldPos.y;
+        linePositions[5] = moonWorldPos.z;
+        tidalLockLine.geometry.attributes.position.needsUpdate = true;
+        tidalLockLine.computeLineDistances();
+
+        // Update Visibility Toggles
+        lunarOrbitLine.visible = state.showOrbit;
+        eclipticRingLine.visible = state.showOrbit;
+        perigeeMarker.visible = state.showOrbit;
+        apogeeMarker.visible = state.showOrbit;
+
+        earthAxisGroup.visible = state.showAxes;
+        moonAxisGroup.visible = state.showAxes;
+        tidalLockLine.visible = state.showAxes;
+        barycenterMarker.visible = state.showAxes;
+
+        cloudMesh.visible = state.showClouds;
+        atmoMesh.visible = state.showClouds;
+        sunlightRaysGroup.visible = state.showSunlight;
+
+        // Smooth Camera Target Tracking
+        if (state.cameraMode === 'moon') {
+          camControl.lookAtTarget.copy(moonWorldPos);
+        } else {
+          camControl.lookAtTarget.set(0, 0, 0);
+        }
+        camControl.lookAtCurrent.lerp(camControl.lookAtTarget, 0.12);
+
+        camControl.spherical.radius += (camControl.targetSpherical.radius - camControl.spherical.radius) * 0.12;
+        camControl.spherical.phi += (camControl.targetSpherical.phi - camControl.spherical.phi) * 0.12;
+        camControl.spherical.theta += (camControl.targetSpherical.theta - camControl.spherical.theta) * 0.12;
+
+        const offset = new THREE.Vector3().setFromSpherical(camControl.spherical);
+        camera.position.copy(camControl.lookAtCurrent).add(offset);
+        camera.lookAt(camControl.lookAtCurrent);
+
+        // Calculate Real Astronomical Telemetry (Vis-Viva & Keplerian Orbit)
+        const realDistKm = (ASTRO.SEMI_MAJOR_AXIS_KM * (1 - ASTRO.ECCENTRICITY * ASTRO.ECCENTRICITY)) /
+          (1 + ASTRO.ECCENTRICITY * Math.cos(nu));
+        // Vis-viva equation approximation scaled to NASA's exact [0.970, 1.082] km/s range
+        const distNorm = (realDistKm - ASTRO.PERIGEE_KM) / (ASTRO.APOGEE_KM - ASTRO.PERIGEE_KM);
+        const realVelKms = ASTRO.MAX_VELOCITY_KMS - distNorm * (ASTRO.MAX_VELOCITY_KMS - ASTRO.MIN_VELOCITY_KMS);
+        const illumPct = ((1 - Math.cos(phaseAngle)) * 0.5) * 100;
+        const elongDeg = THREE.MathUtils.radToDeg(phaseAngle);
+
+        // Update DOM Readouts
+        document.getElementById('readout-distance').textContent = `${Math.round(realDistKm).toLocaleString('en-US')} km`;
+        document.getElementById('readout-velocity').textContent = `${realVelKms.toFixed(3)} km/s`;
+        document.getElementById('readout-day').textContent = `第 ${state.synodicDay.toFixed(2)} / 29.53 天`;
+        document.getElementById('readout-illumination').textContent = `${illumPct.toFixed(1)}%`;
+        document.getElementById('readout-phase-name').textContent = getPhaseNameCN(normPhase);
+        document.getElementById('readout-elongation').textContent = `日月黄经差: ${elongDeg.toFixed(1)}°`;
+
+        drawMoonPhasePiP(phaseAngle);
+
+        // Update 2D Projected Floating Labels
+        perigeeMarker.getWorldPosition(perigeeWorldPos);
+        apogeeMarker.getWorldPosition(apogeeWorldPos);
+
+        projectLabel(document.getElementById('label-earth'), earthWorldPos, 28);
+        projectLabel(document.getElementById('label-moon'), moonWorldPos, 20);
+        projectLabel(document.getElementById('label-perigee'), perigeeWorldPos, 12);
+        projectLabel(document.getElementById('label-apogee'), apogeeWorldPos, 12);
+        projectLabel(document.getElementById('label-barycenter'), barycenterWorldPos, -18);
+      }
+
+      // =========================================================================
+      // 7. UI Event Listeners Wiring
+      // =========================================================================
+      function updateToggleButtonStyle(btn, isActive, activeColor) {
+        const prefix = btn.id === 'toggle-sunlight' ? '☀ ' : (isActive ? '✓ ' : '○ ');
+        const baseText = btn.textContent.replace(/^[✓○☀]\s*/, '');
+        btn.textContent = prefix + baseText;
+        if (isActive) {
+          btn.className = activeColor === 'amber'
+            ? 'px-2.5 py-1 rounded-lg text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-400/40 transition'
+            : 'px-2.5 py-1 rounded-lg text-[11px] font-medium bg-sky-500/20 text-sky-300 border border-sky-400/40 transition';
+        } else {
+          btn.className = 'px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-800/70 text-slate-400 border border-slate-700 transition';
+        }
+      }
+
+      // Play / Pause
+      document.getElementById('btn-play-pause').addEventListener('click', () => {
+        state.isPlaying = !state.isPlaying;
+        document.getElementById('icon-play-pause').textContent = state.isPlaying ? '⏸' : '▶';
+        document.getElementById('text-play-pause').textContent = state.isPlaying ? '暂停演化' : '继续演化';
+      });
+
+      // Reset View
+      document.getElementById('btn-reset-view').addEventListener('click', () => {
+        setCameraPreset('system');
+      });
+
+      // Lunar Day Scrubber
+      document.getElementById('slider-day').addEventListener('input', (e) => {
+        state.synodicDay = parseFloat(e.target.value) || 0;
+      });
+
+      // Speed Slider
+      document.getElementById('slider-speed').addEventListener('input', (e) => {
+        state.speedDaysPerSec = parseFloat(e.target.value) || 1;
+        document.getElementById('readout-speed').textContent = `${state.speedDaysPerSec.toFixed(1)}天/秒`;
+      });
+
+      // Quick Phase Jump Buttons
+      document.querySelectorAll('.phase-jump-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const targetDay = parseFloat(btn.getAttribute('data-phase-day')) || 0;
+          state.synodicDay = targetDay;
+          document.getElementById('slider-day').value = targetDay.toFixed(2);
+        });
+      });
+
+      // Camera Preset Buttons
+      document.querySelectorAll('.cam-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const mode = btn.getAttribute('data-cam');
+          if (mode) setCameraPreset(mode);
+        });
+      });
+
+      // Scale Mode Buttons
+      const btnScaleVisual = document.getElementById('btn-scale-visual');
+      const btnScaleTrue = document.getElementById('btn-scale-true');
+      btnScaleVisual.addEventListener('click', () => {
+        state.scaleMode = 'visual';
+        btnScaleVisual.className = 'px-2 py-1 rounded-lg text-[11px] font-medium bg-indigo-500/30 text-indigo-200 border border-indigo-400/50 transition';
+        btnScaleTrue.className = 'px-2 py-1 rounded-lg text-[11px] font-medium bg-slate-800/70 hover:bg-slate-700/70 text-slate-300 border border-slate-700 transition';
+        document.getElementById('badge-scale-note').textContent = '地月半径比 1 : 0.273 (紧凑教学距离)';
+        rebuildOrbitGeometry();
+        setCameraPreset(state.cameraMode);
+      });
+
+      btnScaleTrue.addEventListener('click', () => {
+        state.scaleMode = 'true';
+        btnScaleTrue.className = 'px-2 py-1 rounded-lg text-[11px] font-medium bg-indigo-500/30 text-indigo-200 border border-indigo-400/50 transition';
+        btnScaleVisual.className = 'px-2 py-1 rounded-lg text-[11px] font-medium bg-slate-800/70 hover:bg-slate-700/70 text-slate-300 border border-slate-700 transition';
+        document.getElementById('badge-scale-note').textContent = '1:1 真实天体比例 (轨道半径 = 60.3 倍地球半径)';
+        rebuildOrbitGeometry();
+        setCameraPreset(state.cameraMode);
+      });
+
+      // Visual Layer Toggles
+      const btnToggleOrbit = document.getElementById('toggle-orbit');
+      btnToggleOrbit.addEventListener('click', () => {
+        state.showOrbit = !state.showOrbit;
+        updateToggleButtonStyle(btnToggleOrbit, state.showOrbit, 'sky');
+      });
+
+      const btnToggleAxes = document.getElementById('toggle-axes');
+      btnToggleAxes.addEventListener('click', () => {
+        state.showAxes = !state.showAxes;
+        updateToggleButtonStyle(btnToggleAxes, state.showAxes, 'sky');
+      });
+
+      const btnToggleClouds = document.getElementById('toggle-clouds');
+      btnToggleClouds.addEventListener('click', () => {
+        state.showClouds = !state.showClouds;
+        updateToggleButtonStyle(btnToggleClouds, state.showClouds, 'sky');
+      });
+
+      const btnToggleLabels = document.getElementById('toggle-labels');
+      btnToggleLabels.addEventListener('click', () => {
+        state.showLabels = !state.showLabels;
+        updateToggleButtonStyle(btnToggleLabels, state.showLabels, 'sky');
+      });
+
+      const btnToggleSunlight = document.getElementById('toggle-sunlight');
+      btnToggleSunlight.addEventListener('click', () => {
+        state.showSunlight = !state.showSunlight;
+        updateToggleButtonStyle(btnToggleSunlight, state.showSunlight, 'amber');
+      });
+
+      // NASA Data Modal Open / Close
+      const modalData = document.getElementById('modal-data');
+      document.getElementById('btn-open-data').addEventListener('click', () => {
+        modalData.classList.remove('hidden');
+        modalData.classList.add('flex');
+      });
+      document.getElementById('btn-close-data').addEventListener('click', () => {
+        modalData.classList.add('hidden');
+        modalData.classList.remove('flex');
+      });
+      modalData.addEventListener('click', (e) => {
+        if (e.target === modalData) {
+          modalData.classList.add('hidden');
+          modalData.classList.remove('flex');
+        }
+      });
+
+      // Responsive Resize Handling
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      // =========================================================================
+      // 8. Main Animation Loop Startup
+      // =========================================================================
+      rebuildOrbitGeometry();
+      setCameraPreset('system');
+
+      let lastTime = performance.now();
+      function animate(now) {
+        requestAnimationFrame(animate);
+        const dt = Math.min(0.1, (now - lastTime) / 1000);
+        lastTime = now;
+        updateSimulation(dt);
+        renderer.render(scene, camera);
+      }
+
+      window.onload = () => {
+        lastTime = performance.now();
+        requestAnimationFrame(animate);
+      };
+    })();
+  </script>
 </body>
 </html>
